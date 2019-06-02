@@ -1226,6 +1226,7 @@ void lge_mdss_panel_dead_work(struct work_struct *work)
 			mutex_unlock(&display->panel->panel_lock);
 			pr_info("re-trigger panel_dead after 5 secs\n");
 			pr_info("skipping retrigger to see what happens"); //dirty hack lets see if this works
+			//pr_info(lge.lp_state);
 		schedule_delayed_work(&display->panel->lge.panel_dead_work,
 							msecs_to_jiffies(STATUS_CHECK_INTERVAL_MS));
 			return;
