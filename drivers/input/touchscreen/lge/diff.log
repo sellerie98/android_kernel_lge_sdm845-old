@@ -1,0 +1,162 @@
+diff --git a/arch/arm64/configs/judyln_lao_com-perf_defconfig b/arch/arm64/configs/judyln_lao_com-perf_defconfig
+index 6b5686e4ea84..75f71280a6e8 100644
+--- a/arch/arm64/configs/judyln_lao_com-perf_defconfig
++++ b/arch/arm64/configs/judyln_lao_com-perf_defconfig
+@@ -742,7 +742,7 @@ CONFIG_LFR_SUBNET_DETECTION=y
+ CONFIG_MCC_TO_SCC_SWITCH=y
+ CONFIG_QCACLD_WLAN_LFR2=y
+ # CONFIG_WCN399x [END]
+-CONFIG_LGE_DISPLAY_COMMON=y
++#CONFIG_LGE_DISPLAY_COMMON=y
+ #CONFIG_LGE_DISPLAY_TUNING_AOD_MODE is not set
+ #CONFIG_LGE_DISPLAY_TUNING_DDVDH is not set
+ CONFIG_LGE_DISPLAY_USE_FSC=y
+diff --git a/drivers/gpu/drm/msm/lge/lge_dsi_panel.c b/drivers/gpu/drm/msm/lge/lge_dsi_panel.c
+index 9addf62608bb..d30c43e06afc 100644
+--- a/drivers/gpu/drm/msm/lge/lge_dsi_panel.c
++++ b/drivers/gpu/drm/msm/lge/lge_dsi_panel.c
+@@ -1226,6 +1226,7 @@ void lge_mdss_panel_dead_work(struct work_struct *work)
+ 			mutex_unlock(&display->panel->panel_lock);
+ 			pr_info("re-trigger panel_dead after 5 secs\n");
+ 			pr_info("skipping retrigger to see what happens"); //dirty hack lets see if this works
++			//pr_info(lge.lp_state);
+ 		schedule_delayed_work(&display->panel->lge.panel_dead_work,
+ 							msecs_to_jiffies(STATUS_CHECK_INTERVAL_MS));
+ 			return;
+diff --git a/drivers/input/touchscreen/lge/touch_core.c b/drivers/input/touchscreen/lge/touch_core.c
+index 81a3c00d5901..e72db81bee9b 100644
+--- a/drivers/input/touchscreen/lge/touch_core.c
++++ b/drivers/input/touchscreen/lge/touch_core.c
+@@ -424,6 +424,7 @@ static int touch_init_input(struct touch_core_data *ts)
+ 	set_bit(EV_KEY, input->evbit);
+ 	set_bit(BTN_TOUCH, input->keybit);
+ 	set_bit(BTN_TOOL_FINGER, input->keybit);
++	set_bit(KEY_WAKEUP, input->keybit);
+ 	set_bit(INPUT_PROP_DIRECT, input->propbit);
+ 	input_set_abs_params(input, ABS_MT_POSITION_X, 0,
+ 			ts->caps.max_x, 0, 0);
+@@ -646,6 +647,16 @@ static void touch_send_uevent(struct touch_core_data *ts, int type)
+ 		TOUCH_I("%s\n",  uevent_str[type][0]);
+ 		touch_report_all_event(ts);
+ 	}
++	if (type == TOUCH_UEVENT_KNOCK) {
++		input_report_key(ts->input, KEY_WAKEUP, 1);
++		TOUCH_I("Simulate power button depress\n");
++		TOUCH_I("Simulate power button depress");
++		input_sync(ts->input);
++		input_report_key(ts->input, KEY_WAKEUP, 0);
++		TOUCH_I("Simulate power button release\n");
++		TOUCH_I("Simulate power button release");
++		input_sync(ts->input);
++	}
+ }
+ 
+ void touch_notify_connect(u32 type)
+diff --git a/drivers/input/touchscreen/lge/touch_core.h b/drivers/input/touchscreen/lge/touch_core.h
+index b2aefa1aa2e0..51db4525e7cb 100644
+--- a/drivers/input/touchscreen/lge/touch_core.h
++++ b/drivers/input/touchscreen/lge/touch_core.h
+@@ -324,6 +324,15 @@ enum {
+ 	APP_MENU,
+ };
+ 
++enum {
++	LPWG_SET_COORDS = 3,
++	LPWG_SET_TAPS = 4,
++	LPWG_ENABLE_TAP_LISTENER = 8,
++	LPWG_MASTER = 9,
++};
++
++
++
+ struct state_info {
+ 	atomic_t core;
+ 	atomic_t pm;
+diff --git a/drivers/input/touchscreen/lge/touch_core_sysfs.c b/drivers/input/touchscreen/lge/touch_core_sysfs.c
+index 89e50d16805d..56f8daad22e1 100644
+--- a/drivers/input/touchscreen/lge/touch_core_sysfs.c
++++ b/drivers/input/touchscreen/lge/touch_core_sysfs.c
+@@ -30,6 +30,7 @@
+ static char ime_str[3][8] = {"OFF", "ON", "SWYPE"};
+ static char incoming_call_str[7][15] = {"IDLE", "RINGING", "OFFHOOK", "CDMA_RINGING", "CDMA_OFFHOOK", "LTE_RINGING", "LTE_OFFHOOK"};
+ static char mfts_str[4][8] = {"NONE", "FOLDER", "FLAT", "CURVED"};
++static int lpwg_status = 0;
+ 
+ static ssize_t show_platform_data(struct device *dev, char *buf)
+ {
+@@ -143,6 +144,13 @@ static ssize_t store_lpwg_data(struct device *dev,
+ 	return count;
+ }
+ 
++static ssize_t show_lpwg_notify(struct device *dev, char *buf)
++{
++	return sprintf(buf, "%d\n", lpwg_status);
++}
++
++
++
+ static ssize_t store_lpwg_notify(struct device *dev,
+ 		const char *buf, size_t count)
+ {
+@@ -173,12 +181,43 @@ static ssize_t store_lpwg_notify(struct device *dev,
+ 	if (ts->driver->lpwg) {
+ 		mutex_lock(&ts->lock);
+ 		ts->driver->lpwg(ts->dev, code, param);
++		lpwg_status = (param[0]) ? 1 : 0;
++		mutex_unlock(&ts->lock);
++	}
++
++	return count;
++}
++
++static int tap2wake_knocked[4] = { 1, 1, 0, 0 };
++
++static ssize_t show_tap2wake(struct device *dev, char *buf)
++{
++	return scnprintf(buf, PAGE_SIZE, "%d\n", lpwg_status);
++}
++
++
++
++static ssize_t store_tap2wake(struct device *dev,
++		const char *buf, size_t count)
++{
++	struct touch_core_data *ts = to_touch_core(dev);
++	int status = 0;
++
++	sscanf(buf, "%d", &tap2wake_knocked[0]);
++
++	if (ts->driver->lpwg) {
++		mutex_lock(&ts->lock);
++		TOUCH_I("tap2wake %s\n", (status) ? "Enabled" : "Disabled");
++		ts->driver->lpwg(ts->dev, LPWG_MASTER, tap2wake_knocked);
++		lpwg_status = status;
+ 		mutex_unlock(&ts->lock);
+ 	}
+ 
+ 	return count;
+ }
+ 
++
++
+ static ssize_t show_lockscreen_state(struct device *dev, char *buf)
+ {
+ 	struct touch_core_data *ts = to_touch_core(dev);
+@@ -920,7 +959,8 @@ static TOUCH_ATTR(secure_touch_devinfo, show_secure_touch_devinfo, NULL);
+ static TOUCH_ATTR(platform_data, show_platform_data, NULL);
+ static TOUCH_ATTR(fw_upgrade, show_upgrade, store_upgrade);
+ static TOUCH_ATTR(lpwg_data, show_lpwg_data, store_lpwg_data);
+-static TOUCH_ATTR(lpwg_notify, NULL, store_lpwg_notify);
++static TOUCH_ATTR(lpwg_notify, show_lpwg_notify, store_lpwg_notify);
++static TOUCH_ATTR(tap2wake, show_tap2wake, store_tap2wake);
+ static TOUCH_ATTR(keyguard,
+ 	show_lockscreen_state, store_lockscreen_state);
+ static TOUCH_ATTR(ime_status, show_ime_state, store_ime_state);
+@@ -948,6 +988,7 @@ static struct attribute *touch_attribute_list[] = {
+ 	&touch_attr_fw_upgrade.attr,
+ 	&touch_attr_lpwg_data.attr,
+ 	&touch_attr_lpwg_notify.attr,
++	&touch_attr_tap2wake.attr,
+ 	&touch_attr_keyguard.attr,
+ 	&touch_attr_ime_status.attr,
+ 	&touch_attr_quick_cover_status.attr,
