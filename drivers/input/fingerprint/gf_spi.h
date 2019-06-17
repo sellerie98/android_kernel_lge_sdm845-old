@@ -33,7 +33,7 @@ enum gf_error_type {
 #define NETLINK_TEST 25
 #endif
 
-#define SUPPORT_NAV_EVENT
+#define SUPPORT_NAV_EVENT 1
 
 #define GF_KEY_INPUT_PROGRAM        KEY_PROGRAM
 #if 0 // LGE use KEY_PROGRAM as default

@@ -4473,7 +4473,7 @@ static ssize_t show_swipe_tool(struct device *dev, char *buf)
 {
 	struct ftm4_data *d = to_ftm4_data(dev);
 	int value = 0;
-	u32 mask = SWIPE_DOWN_BIT | SWIPE_RIGHT_BIT | SWIPE_LEFT_BIT;
+	u32 mask = SWIPE_UP_BIT | SWIPE_DOWN_BIT | SWIPE_RIGHT_BIT | SWIPE_LEFT_BIT;
 	int ret = 0;
 
 	TOUCH_TRACE();
